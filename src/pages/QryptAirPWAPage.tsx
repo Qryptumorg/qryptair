@@ -673,7 +673,7 @@ function LandingCard({ onEnter, isOnline }: { onEnter: () => void; isOnline: boo
         { n: "05", text: "Share the QR code - anyone can broadcast it, funds always reach the recipient" },
     ];
 
-    const isDesktop = window.matchMedia("(min-width: 900px)").matches;
+    const isDesktop = window.matchMedia("(min-width: 769px)").matches;
 
     const statusBlock = (
         <div style={{
