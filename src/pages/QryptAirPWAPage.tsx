@@ -5,7 +5,7 @@ import { useAccount, useChainId, useReadContracts } from "wagmi";
 import { useVault } from "@/hooks/useVault";
 import { PERSONAL_VAULT_ABI, PERSONAL_VAULT_V6_ABI } from "@/lib/abi";
 import {
-    DownloadIcon, SendIcon,
+    DownloadIcon, SendIcon, CopyIcon,
     ClockIcon, CheckCircle2Icon, AlertTriangleIcon,
     WifiOffIcon, WifiIcon, Loader2Icon, ChevronDownIcon,
     RefreshCwIcon, SmartphoneIcon, MonitorIcon, ArrowRightIcon,
@@ -177,6 +177,19 @@ function useAirBagTokens(
 function QrCard({ record }: { record: VoucherRecord }) {
     const logoUrl = `${import.meta.env.BASE_URL}qryptum-logo.png`;
     const isExpired = record.status === "expired";
+    const [copied, setCopied] = useState(false);
+
+    const copy = useCallback(async () => {
+        try {
+            await navigator.clipboard.writeText(record.qrData);
+        } catch {
+            const ta = document.createElement("textarea");
+            ta.value = record.qrData;
+            document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+        }
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    }, [record.qrData]);
 
     const download = useCallback(() => {
         const container = document.getElementById(`qr-${record.id}`);
@@ -231,21 +244,54 @@ function QrCard({ record }: { record: VoucherRecord }) {
                 </div>
             )}
 
+            {!isExpired && (
+                <div
+                    onClick={copy}
+                    title="Click to copy raw payload"
+                    style={{
+                        fontFamily: "monospace", fontSize: 9,
+                        color: "rgba(255,255,255,0.3)",
+                        background: "rgba(255,255,255,0.03)",
+                        border: "1px solid rgba(255,255,255,0.07)",
+                        borderRadius: 6, padding: "6px 8px",
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        letterSpacing: "0.02em", cursor: "pointer",
+                        userSelect: "all",
+                    }}
+                >
+                    {record.qrData.slice(0, 72)}…
+                </div>
+            )}
+
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                 <span style={{ fontSize: 10, color: "rgba(255,255,255,0.28)", display: "flex", alignItems: "center", gap: 3 }}>
                     <ClockIcon size={9} />
                     {isExpired ? "Expired" : `Expires ${formatDistanceToNow(new Date(record.deadline * 1000), { addSuffix: true })}`}
                 </span>
                 {!isExpired && (
-                    <button onClick={download} style={{
-                        display: "flex", alignItems: "center", gap: 4,
-                        padding: "5px 9px", borderRadius: 6,
-                        background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)",
-                        color: "#F59E0B", fontSize: 10, fontWeight: 600, cursor: "pointer",
-                        fontFamily: "'Inter', sans-serif",
-                    }}>
-                        <DownloadIcon size={9} /> SVG
-                    </button>
+                    <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={copy} style={{
+                            display: "flex", alignItems: "center", gap: 4,
+                            padding: "5px 9px", borderRadius: 6,
+                            background: copied ? "rgba(74,222,128,0.1)" : "rgba(255,255,255,0.06)",
+                            border: `1px solid ${copied ? "rgba(74,222,128,0.3)" : "rgba(255,255,255,0.1)"}`,
+                            color: copied ? "#4ade80" : "rgba(255,255,255,0.5)",
+                            fontSize: 10, fontWeight: 600, cursor: "pointer",
+                            fontFamily: "'Inter', sans-serif", transition: "all 0.15s",
+                        }}>
+                            {copied ? <CheckIcon size={9} /> : <CopyIcon size={9} />}
+                            {copied ? "Copied!" : "Copy"}
+                        </button>
+                        <button onClick={download} style={{
+                            display: "flex", alignItems: "center", gap: 4,
+                            padding: "5px 9px", borderRadius: 6,
+                            background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)",
+                            color: "#F59E0B", fontSize: 10, fontWeight: 600, cursor: "pointer",
+                            fontFamily: "'Inter', sans-serif",
+                        }}>
+                            <DownloadIcon size={9} /> SVG
+                        </button>
+                    </div>
                 )}
             </div>
         </div>
