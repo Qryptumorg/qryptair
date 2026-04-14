@@ -1052,9 +1052,46 @@ export default function QryptAirPWAPage() {
     const { address, isConnected, connector } = useAccount();
     const chainId = useChainId();
     const { vaultAddress, vaultVersion, hasVault } = useVault();
-    const { airTokens, refetch: refetchTokens } = useAirBagTokens(vaultAddress, vaultVersion, chainId ?? CHAIN_ID);
 
-    const loadingTokens = !!address && isConnected && hasVault && airTokens.length === 0;
+    // Cache written by the main /app/ dashboard (shared localStorage — same origin)
+    type AirCache = {
+        updatedAt: number; vaultAddress: string; vaultVersion: string;
+        chainId: number; balances: Record<string, { raw: string; symbol: string; name: string; decimals: number }>;
+    };
+    const [airCache, setAirCache] = useState<AirCache | null>(null);
+
+    useEffect(() => {
+        if (!address) return;
+        try {
+            const raw = localStorage.getItem(`qryptair_sync_${address.toLowerCase()}`);
+            if (raw) setAirCache(JSON.parse(raw));
+        } catch {}
+    }, [address]);
+
+    const effectiveVaultAddress = vaultAddress ?? (airCache?.vaultAddress as `0x${string}` | undefined);
+    const effectiveVaultVersion = vaultVersion ?? airCache?.vaultVersion ?? null;
+
+    const { airTokens: liveAirTokens, refetch: refetchTokens } = useAirBagTokens(effectiveVaultAddress, effectiveVaultVersion, chainId ?? CHAIN_ID);
+
+    const airTokens = useMemo<AirToken[]>(() => {
+        if (liveAirTokens.length > 0) return liveAirTokens;
+        if (!airCache?.balances) return [];
+        const knownList = KNOWN_TOKENS[airCache.chainId ?? CHAIN_ID] ?? KNOWN_TOKENS[CHAIN_ID];
+        return Object.entries(airCache.balances)
+            .filter(([, v]) => BigInt(v.raw) > 0n)
+            .map(([addr, v]) => {
+                const known = knownList.find(t => t.address.toLowerCase() === addr);
+                return {
+                    tokenAddress: addr,
+                    tokenSymbol: v.symbol || known?.symbol || "???",
+                    tokenName: v.name || known?.name || "Unknown",
+                    decimals: v.decimals ?? 18,
+                    airBudget: BigInt(v.raw),
+                };
+            });
+    }, [liveAirTokens, airCache]);
+
+    const loadingTokens = !!address && isConnected && (hasVault || !!effectiveVaultAddress) && liveAirTokens.length === 0 && !airCache;
 
     const [history, setHistory] = useState<VoucherRecord[]>(loadHistory);
     const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -1151,6 +1188,16 @@ export default function QryptAirPWAPage() {
                         </span>
                     )}
                 </div>
+                {!isOnline && airCache && (
+                    <p style={{ margin: "4px 0 0", fontSize: 10, color: "rgba(255,255,255,0.25)", lineHeight: 1.5 }}>
+                        Balance synced {formatDistanceToNow(new Date(airCache.updatedAt), { addSuffix: true })} via main app
+                    </p>
+                )}
+                {!isOnline && !airCache && (
+                    <p style={{ margin: "4px 0 0", fontSize: 10, color: "rgba(245,158,11,0.4)", lineHeight: 1.5 }}>
+                        Open main app once while online to sync balance
+                    </p>
+                )}
             </div>
 
             <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
@@ -1224,7 +1271,7 @@ export default function QryptAirPWAPage() {
                         {hasVault && (
                             <SendForm
                                 walletAddress={address}
-                                vaultAddress={vaultAddress as string ?? ""}
+                                vaultAddress={effectiveVaultAddress as string ?? ""}
                                 airTokens={airTokens}
                                 loadingTokens={loadingTokens}
                                 onVoucherCreated={onVoucherCreated}
