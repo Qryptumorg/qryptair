@@ -499,18 +499,18 @@ function SendForm({
 
             const effectiveBudget = effectiveSelected?.airBudget ?? 0n;
             if (effectiveBudget === 0n) {
-                setError(`No remaining budget — all funds are locked in pending vouchers.`);
+                setError(`No remaining budget. All funds are locked in pending offTokens.`);
                 setLoading(false); return;
             }
             if (parsedAmount > effectiveBudget) {
-                setError(`Only ${maxAmount} ${selectedToken.tokenSymbol} available (pending vouchers deducted).`);
+                setError(`Only ${maxAmount} ${selectedToken.tokenSymbol} available. Pending offTokens have been deducted.`);
                 setLoading(false); return;
             }
 
             const deadline = Math.floor(addDays(new Date(), deadlineDays).getTime() / 1000);
             const nonce = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)))
                 .map(b => b.toString(16).padStart(2, "0")).join("")}` as `0x${string}`;
-            // Auto-generate transfer code — embedded in QR payload so claimer needs no separate secret
+            // Auto-generate transfer code, embedded in QR payload so claimer needs no separate secret
             const rawTransferCode = Array.from(crypto.getRandomValues(new Uint8Array(16)))
                 .map(b => b.toString(16).padStart(2, "0")).join("");
             const transferCodeHash = keccak256(toBytes(rawTransferCode));
@@ -587,7 +587,7 @@ function SendForm({
         } finally {
             setLoading(false);
         }
-    }, [walletAddress, vaultAddress, selectedToken, amount, recipient, deadlineDays, maxAmount, onVoucherCreated]);
+    }, [walletAddress, vaultAddress, selectedToken, amount, recipient, transferCode, deadlineDays, maxAmount, onVoucherCreated]);
 
     const fieldLabel = (label: string) => (
         <label style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.4)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
@@ -663,7 +663,7 @@ function SendForm({
             }}>
                 <ShieldCheckIcon size={11} color="#F59E0B" style={{ flexShrink: 0, marginTop: 2 }} />
                 <p style={{ margin: 0, fontSize: 11, color: "rgba(255,255,255,0.4)", lineHeight: 1.5 }}>
-                    Transfer code auto-generated and embedded in QR. Recipient scans and signs — no separate secret needed.
+                    Transfer code auto-generated and embedded in QR. Recipient scans and signs. No separate secret needed.
                 </p>
             </div>
 
@@ -685,7 +685,7 @@ function SendForm({
                     background: "rgba(74,222,128,0.07)", border: "1px solid rgba(74,222,128,0.2)",
                 }}>
                     <CheckCircle2Icon size={11} color="#4ade80" />
-                    <p style={{ margin: 0, fontSize: 11, color: "#4ade80" }}>Voucher created</p>
+                    <p style={{ margin: 0, fontSize: 11, color: "#4ade80" }}>off{selectedToken?.tokenSymbol} created</p>
                 </div>
             )}
 
@@ -705,7 +705,7 @@ function SendForm({
             >
                 {loading
                     ? <><Loader2Icon size={13} style={{ animation: "spin 1s linear infinite" }} /> Signing...</>
-                    : <><SendIcon size={13} /> Generate Voucher</>
+                    : <><SendIcon size={13} /> Send off{selectedToken?.tokenSymbol ?? "Token"}</>
                 }
             </button>
 
@@ -777,7 +777,7 @@ function LandingCard({ onEnter, isOnline }: { onEnter: () => void; isOnline: boo
                 </p>
                 <p style={{ margin: "2px 0 0", fontSize: 11, color: "rgba(255,255,255,0.4)", lineHeight: 1.4 }}>
                     {isOnline
-                        ? "Turn off WiFi or mobile data before creating vouchers."
+                        ? "Turn off WiFi or mobile data before creating offTokens."
                         : "MetaMask signs locally. No data leaves your device."}
                 </p>
             </div>
@@ -1052,46 +1052,9 @@ export default function QryptAirPWAPage() {
     const { address, isConnected, connector } = useAccount();
     const chainId = useChainId();
     const { vaultAddress, vaultVersion, hasVault } = useVault();
+    const { airTokens, refetch: refetchTokens } = useAirBagTokens(vaultAddress, vaultVersion, chainId ?? CHAIN_ID);
 
-    // Cache written by the main /app/ dashboard (shared localStorage — same origin)
-    type AirCache = {
-        updatedAt: number; vaultAddress: string; vaultVersion: string;
-        chainId: number; balances: Record<string, { raw: string; symbol: string; name: string; decimals: number }>;
-    };
-    const [airCache, setAirCache] = useState<AirCache | null>(null);
-
-    useEffect(() => {
-        if (!address) return;
-        try {
-            const raw = localStorage.getItem(`qryptair_sync_${address.toLowerCase()}`);
-            if (raw) setAirCache(JSON.parse(raw));
-        } catch {}
-    }, [address]);
-
-    const effectiveVaultAddress = vaultAddress ?? (airCache?.vaultAddress as `0x${string}` | undefined);
-    const effectiveVaultVersion = vaultVersion ?? airCache?.vaultVersion ?? null;
-
-    const { airTokens: liveAirTokens, refetch: refetchTokens } = useAirBagTokens(effectiveVaultAddress, effectiveVaultVersion, chainId ?? CHAIN_ID);
-
-    const airTokens = useMemo<AirToken[]>(() => {
-        if (liveAirTokens.length > 0) return liveAirTokens;
-        if (!airCache?.balances) return [];
-        const knownList = KNOWN_TOKENS[airCache.chainId ?? CHAIN_ID] ?? KNOWN_TOKENS[CHAIN_ID];
-        return Object.entries(airCache.balances)
-            .filter(([, v]) => BigInt(v.raw) > 0n)
-            .map(([addr, v]) => {
-                const known = knownList.find(t => t.address.toLowerCase() === addr);
-                return {
-                    tokenAddress: addr,
-                    tokenSymbol: v.symbol || known?.symbol || "???",
-                    tokenName: v.name || known?.name || "Unknown",
-                    decimals: v.decimals ?? 18,
-                    airBudget: BigInt(v.raw),
-                };
-            });
-    }, [liveAirTokens, airCache]);
-
-    const loadingTokens = !!address && isConnected && (hasVault || !!effectiveVaultAddress) && liveAirTokens.length === 0 && !airCache;
+    const loadingTokens = !!address && isConnected && hasVault && airTokens.length === 0;
 
     const [history, setHistory] = useState<VoucherRecord[]>(loadHistory);
     const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -1112,7 +1075,7 @@ export default function QryptAirPWAPage() {
 
         if ("serviceWorker" in navigator) {
             navigator.serviceWorker
-                .register(`${base}air-sw.js`, { scope: base })
+                .register(`${base}air-sw.js`, { scope: `${base}air` })
                 .catch(() => {});
         }
 
@@ -1124,6 +1087,7 @@ export default function QryptAirPWAPage() {
     useEffect(() => {
         const on = () => {
             setIsOnline(true);
+            setShowLanding(true);
             refetchTokens();
             const { records, changed } = syncExpired(loadHistory());
             const latest = changed ? records : loadHistory();
@@ -1188,16 +1152,6 @@ export default function QryptAirPWAPage() {
                         </span>
                     )}
                 </div>
-                {!isOnline && airCache && (
-                    <p style={{ margin: "4px 0 0", fontSize: 10, color: "rgba(255,255,255,0.25)", lineHeight: 1.5 }}>
-                        Balance synced {formatDistanceToNow(new Date(airCache.updatedAt), { addSuffix: true })} via main app
-                    </p>
-                )}
-                {!isOnline && !airCache && (
-                    <p style={{ margin: "4px 0 0", fontSize: 10, color: "rgba(245,158,11,0.4)", lineHeight: 1.5 }}>
-                        Open main app once while online to sync balance
-                    </p>
-                )}
             </div>
 
             <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
@@ -1271,7 +1225,7 @@ export default function QryptAirPWAPage() {
                         {hasVault && (
                             <SendForm
                                 walletAddress={address}
-                                vaultAddress={effectiveVaultAddress as string ?? ""}
+                                vaultAddress={vaultAddress as string ?? ""}
                                 airTokens={airTokens}
                                 loadingTokens={loadingTokens}
                                 onVoucherCreated={onVoucherCreated}
@@ -1305,9 +1259,9 @@ export default function QryptAirPWAPage() {
 
             {history.length === 0 ? (
                 <div style={{ textAlign: "center", paddingTop: 60 }}>
-                    <p style={{ color: "rgba(255,255,255,0.2)", fontSize: 13, margin: 0 }}>No vouchers yet</p>
+                    <p style={{ color: "rgba(255,255,255,0.2)", fontSize: 13, margin: 0 }}>No offTokens yet</p>
                     <p style={{ color: "rgba(255,255,255,0.1)", fontSize: 11, margin: "6px 0 0" }}>
-                        Generated vouchers appear here
+                        Generated offTokens appear here
                     </p>
                 </div>
             ) : (
