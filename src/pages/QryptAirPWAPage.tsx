@@ -419,12 +419,14 @@ function SendForm({
     airTokens,
     loadingTokens,
     onVoucherCreated,
+    history,
 }: {
     walletAddress: string;
     vaultAddress: string;
     airTokens: AirToken[];
     loadingTokens: boolean;
     onVoucherCreated: (r: VoucherRecord) => void;
+    history: VoucherRecord[];
 }) {
     const [selectedToken, setSelectedToken] = useState<AirToken | null>(null);
     const [amount, setAmount] = useState("");
@@ -434,14 +436,40 @@ function SendForm({
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
 
-    useEffect(() => {
-        if (!selectedToken && airTokens.length > 0) {
-            setSelectedToken(airTokens[0]);
+    // Deduct pending (unredeemed) voucher amounts from each token's available budget
+    const adjustedTokens = useMemo(() => {
+        const pendingByToken: Record<string, bigint> = {};
+        for (const r of history) {
+            if (r.status === "pending") {
+                const key = r.tokenAddress.toLowerCase();
+                const token = airTokens.find(t => t.tokenAddress.toLowerCase() === key);
+                if (token) {
+                    try {
+                        pendingByToken[key] = (pendingByToken[key] ?? 0n) + parseUnits(r.amount, token.decimals);
+                    } catch { /* skip malformed records */ }
+                }
+            }
         }
-    }, [airTokens, selectedToken]);
+        return airTokens.map(t => {
+            const locked = pendingByToken[t.tokenAddress.toLowerCase()] ?? 0n;
+            const effectiveBudget = t.airBudget > locked ? t.airBudget - locked : 0n;
+            return { ...t, airBudget: effectiveBudget };
+        });
+    }, [airTokens, history]);
 
-    const maxAmount = selectedToken
-        ? formatUnits(selectedToken.airBudget, selectedToken.decimals)
+    useEffect(() => {
+        if (!selectedToken && adjustedTokens.length > 0) {
+            setSelectedToken(adjustedTokens[0]);
+        }
+    }, [adjustedTokens, selectedToken]);
+
+    // Always derive effective budget from adjustedTokens so it updates after each voucher creation
+    const effectiveSelected = selectedToken
+        ? (adjustedTokens.find(t => t.tokenAddress === selectedToken.tokenAddress) ?? selectedToken)
+        : null;
+
+    const maxAmount = effectiveSelected
+        ? formatUnits(effectiveSelected.airBudget, effectiveSelected.decimals)
         : "0";
 
     const handleMax = () => setAmount(maxAmount);
@@ -469,8 +497,13 @@ function SendForm({
                 setError("Invalid amount."); setLoading(false); return;
             }
 
-            if (parsedAmount > selectedToken.airBudget) {
-                setError(`Exceeds Air Bag budget (${maxAmount} ${selectedToken.tokenSymbol}).`);
+            const effectiveBudget = effectiveSelected?.airBudget ?? 0n;
+            if (effectiveBudget === 0n) {
+                setError(`No remaining budget — all funds are locked in pending vouchers.`);
+                setLoading(false); return;
+            }
+            if (parsedAmount > effectiveBudget) {
+                setError(`Only ${maxAmount} ${selectedToken.tokenSymbol} available (pending vouchers deducted).`);
                 setLoading(false); return;
             }
 
@@ -568,8 +601,8 @@ function SendForm({
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {fieldLabel("Token")}
                 <TokenDropdown
-                    airTokens={airTokens}
-                    selected={selectedToken}
+                    airTokens={adjustedTokens}
+                    selected={effectiveSelected}
                     onSelect={setSelectedToken}
                     loading={loadingTokens}
                 />
@@ -1195,6 +1228,7 @@ export default function QryptAirPWAPage() {
                                 airTokens={airTokens}
                                 loadingTokens={loadingTokens}
                                 onVoucherCreated={onVoucherCreated}
+                                history={history}
                             />
                         )}
                     </>
