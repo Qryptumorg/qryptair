@@ -1,0 +1,35 @@
+{
+  "name": "QryptAir",
+  "short_name": "QryptAir",
+  "description": "Sign blockchain transactions with no internet connection.",
+  "scope": "/qryptair/",
+  "start_url": "/qryptair/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#08090F",
+  "theme_color": "#F59E0B",
+  "categories": [
+    "finance",
+    "utilities"
+  ],
+  "icons": [
+    {
+      "src": "/qryptair/logo-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/qryptair/logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/qryptair/logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
