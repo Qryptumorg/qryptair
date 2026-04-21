@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { addDays, formatDistanceToNow } from "date-fns";
 
+import { dbGetAllVouchers, dbPutAllVouchers, type DbVoucherRecord } from "@/lib/localDb";
+
 const HISTORY_KEY = "qryptair_history";
 const DEADLINES = [
     { label: "1d", days: 1 },
@@ -69,6 +71,7 @@ function loadHistory(): VoucherRecord[] {
 }
 function saveHistory(r: VoucherRecord[]) {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(r));
+    dbPutAllVouchers(r as DbVoucherRecord[]).catch(() => {});
 }
 
 function encodeQrPayload(payload: object): string {
@@ -1073,6 +1076,18 @@ export default function QryptAirPWAPage() {
     const loadingTokens = !!address && isConnected && hasVault && airTokens.length === 0;
 
     const [history, setHistory] = useState<VoucherRecord[]>(loadHistory);
+
+    useEffect(() => {
+        if (history.length === 0) {
+            dbGetAllVouchers().then((dbRecords) => {
+                if (dbRecords.length > 0) {
+                    const records = dbRecords as VoucherRecord[];
+                    localStorage.setItem(HISTORY_KEY, JSON.stringify(records));
+                    setHistory(records);
+                }
+            }).catch(() => {});
+        }
+    }, []);
     const [isOnline, setIsOnline] = useState(navigator.onLine);
     const [showLanding, setShowLanding] = useState(true);
     const [mobileTab, setMobileTab] = useState<"send" | "history">("send");
